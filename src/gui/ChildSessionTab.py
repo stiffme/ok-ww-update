@@ -38,13 +38,13 @@ class ChildSessionTab(CustomTab):
         self.container = None
         self._busy = False
 
+        # 状态栏（先创建，后面的信号连接要引用 self.status）
+        self.status = BodyLabel("桌面分身未连接。点击「连接桌面分身」开始。")
+        self.add_widget(self.status)
+
         self._status.connect(self.status.setText)
         self._download_progress.connect(self._on_download_progress)
         self._connect_finished.connect(self._on_connect_finished)
-
-        # 状态栏
-        self.status = BodyLabel("桌面分身未连接。点击「连接桌面分身」开始。")
-        self.add_widget(self.status)
 
         # 控制按钮
         row = QHBoxLayout()
