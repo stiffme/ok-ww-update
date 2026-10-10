@@ -59,6 +59,7 @@ class SpikeWindow(QWidget):
             ("Win+Tab", lambda: self._shortcut("win_tab")),
             ("隐藏/显示桌面", self.toggle_desktop),
             ("终止桌面分身", self.kill_desktop),
+            ("RDP 硬件GPU", self.toggle_rdp_gpu),
             ("断开并退出", self.shutdown),
         ):
             button = QPushButton(text)
@@ -166,6 +167,17 @@ class SpikeWindow(QWidget):
         visible = self.container.isVisible()
         self.container.setVisible(not visible)
         self.status.setText("已隐藏桌面分身。" if visible else "已显示桌面分身。")
+
+    def toggle_rdp_gpu(self):
+        try:
+            enabled = wts_api.is_rdp_hw_gpu_enabled()
+            wts_api.set_rdp_hw_gpu(not enabled)
+            enabled = wts_api.is_rdp_hw_gpu_enabled()
+            self.status.setText(
+                "已启用 RDP 硬件 GPU，重新连接桌面分身后生效。" if enabled
+                else "已禁用 RDP 硬件 GPU（恢复软件渲染）。")
+        except Exception as ex:
+            self.status.setText(f"切换 RDP 硬件 GPU 失败：{ex}")
 
     def kill_desktop(self):
         try:
