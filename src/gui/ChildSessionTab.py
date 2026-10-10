@@ -54,7 +54,6 @@ class ChildSessionTab(CustomTab):
         # 控制按钮
         row = QHBoxLayout()
         row.setSpacing(8)
-        self.enable_button = PushButton(FluentIcon.IOT, "启用 Child Session")
         self.launch_button = PushButton(FluentIcon.PLAY, "启动子实例 ok-ww")
         self.connect_button = PrimaryPushButton(FluentIcon.CONNECT, "连接桌面分身")
         self.disconnect_button = PushButton(FluentIcon.CLOSE, "断开")
@@ -64,7 +63,7 @@ class ChildSessionTab(CustomTab):
         self.toggle_button = PushButton(FluentIcon.HIDE, "隐藏/显示")
         self.scale_button = PushButton(FluentIcon.ZOOM, "缩放: 1:1")
         self.gpu_button = PushButton(FluentIcon.SETTING, "GPU: 软件渲染")
-        for widget in (self.enable_button, self.launch_button, self.connect_button,
+        for widget in (self.launch_button, self.connect_button,
                        self.disconnect_button, self.kill_button, self.win_d_button,
                        self.win_tab_button, self.toggle_button, self.scale_button,
                        self.gpu_button):
@@ -77,7 +76,6 @@ class ChildSessionTab(CustomTab):
         self.addLayout(self.embed_layout, stretch=1)
 
         # 信号连接
-        self.enable_button.clicked.connect(self.enable_session)
         self.launch_button.clicked.connect(self.launch_okww)
         self.connect_button.clicked.connect(self.connect_desktop)
         self.disconnect_button.clicked.connect(self.disconnect_desktop)
@@ -98,17 +96,6 @@ class ChildSessionTab(CustomTab):
         return FluentIcon.IOT
 
     # -- 动作 ---------------------------------------------------------------
-
-    def enable_session(self):
-        try:
-            if not wts_api.is_child_sessions_enabled():
-                wts_api.enable_child_sessions()
-            session_id = wts_api.get_child_session_id()
-            self._status.emit(
-                f"Child Session 已启用，id={session_id}，RDP 端口={wts_api.get_rdp_port()}，"
-                f"rdpwrap={wts_api.is_rdp_wrapper_enabled()}")
-        except Exception as ex:
-            self._status.emit(f"启用 Child Session 失败：{ex}")
 
     def launch_okww(self):
         if self._launching:
