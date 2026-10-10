@@ -57,12 +57,13 @@ class ChildSessionTab(CustomTab):
         self.launch_button = PushButton(FluentIcon.PLAY, "启动子实例 ok-ww")
         self.connect_button = PrimaryPushButton(FluentIcon.CONNECT, "连接桌面分身")
         self.disconnect_button = PushButton(FluentIcon.CLOSE, "断开")
+        self.kill_button = PushButton(FluentIcon.DELETE, "终止桌面分身")
         self.win_d_button = PushButton(FluentIcon.FULL_SCREEN, "Win+D")
         self.win_tab_button = PushButton(FluentIcon.TILES, "Win+Tab")
         self.toggle_button = PushButton(FluentIcon.HIDE, "隐藏/显示")
         for widget in (self.enable_button, self.launch_button, self.connect_button,
-                       self.disconnect_button, self.win_d_button, self.win_tab_button,
-                       self.toggle_button):
+                       self.disconnect_button, self.kill_button, self.win_d_button,
+                       self.win_tab_button, self.toggle_button):
             row.addWidget(widget)
         self.addLayout(row)
 
@@ -76,6 +77,7 @@ class ChildSessionTab(CustomTab):
         self.launch_button.clicked.connect(self.launch_okww)
         self.connect_button.clicked.connect(self.connect_desktop)
         self.disconnect_button.clicked.connect(self.disconnect_desktop)
+        self.kill_button.clicked.connect(self.kill_desktop)
         self.win_d_button.clicked.connect(lambda: self._shortcut("win_d"))
         self.win_tab_button.clicked.connect(lambda: self._shortcut("win_tab"))
         self.toggle_button.clicked.connect(self.toggle_visibility)
@@ -207,6 +209,31 @@ class ChildSessionTab(CustomTab):
                 logger.warning(f"停止 RdpHost 失败：{ex}")
             self.host = None
         self._status.emit("已断开桌面分身。")
+
+    def kill_desktop(self):
+        # 强制终止桌面分身及其中的游戏/子实例：先断开 RDP 视图，再在后台线程里
+        # 逐个 TerminateProcess 并注销 Child Session（WTSLogoffSession 会阻塞）。
+        self._clear_embed()
+        if self.host:
+            try:
+                self.host.stop(logoff=False)
+            except Exception as ex:
+                logger.warning(f"停止 RdpHost 失败：{ex}")
+            self.host = None
+        self._status.emit("正在终止桌面分身及其中的程序…")
+        threading.Thread(target=self._kill_worker, daemon=True,
+                         name="childsession-kill").start()
+
+    def _kill_worker(self):
+        try:
+            session_id = wts_api.kill_child_session()
+        except Exception as ex:
+            logger.exception("终止桌面分身失败")
+            self._status.emit(f"终止桌面分身失败：{ex}")
+            return
+        self._status.emit(
+            "已终止桌面分身及其中运行的程序。" if session_id is not None
+            else "没有可终止的桌面分身。")
 
     def _shortcut(self, name):
         if not self.host:
