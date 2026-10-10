@@ -191,24 +191,26 @@ class ChildSessionTab(CustomTab):
             self.container = None
 
     def disconnect_desktop(self):
-        # stop(logoff=True) 会让 RdpHost 注销 Child Session（WTSLogoffSession 阻塞，
-        # 最长约数秒）。放在后台线程，避免把 GUI 线程卡住造成窗口失去响应。
+        # 「断开」只关闭 RDP 视图，不注销 Child Session：桌面分身里的游戏和子实例
+        # 继续在后台运行，之后点「连接桌面分身」可重新看到同一个会话。要彻底销毁
+        # 会话及其中程序请用「终止桌面分身」。
+        # stop() 里的进程收尾可能阻塞数秒，放到后台线程避免卡住 GUI。
         self._clear_embed()
         host = self.host
         self.host = None
         if host is None:
             self._status.emit("已断开桌面分身。")
             return
-        self._status.emit("正在断开桌面分身…")
+        self._status.emit("正在断开 RDP 视图…")
         threading.Thread(target=self._disconnect_worker, args=(host,),
                          daemon=True, name="childsession-disconnect").start()
 
     def _disconnect_worker(self, host):
         try:
-            host.stop(logoff=True)
+            host.stop(logoff=False)
         except Exception as ex:
             logger.warning(f"停止 RdpHost 失败：{ex}")
-        self._status.emit("已断开桌面分身。")
+        self._status.emit("已断开 RDP 视图，桌面分身里的游戏和子实例仍在后台运行。")
 
     def kill_desktop(self):
         # 强制终止桌面分身及其中的游戏/子实例：先断开 RDP 视图，再在后台线程里
