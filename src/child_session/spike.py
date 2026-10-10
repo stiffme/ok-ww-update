@@ -53,7 +53,6 @@ class SpikeWindow(QWidget):
 
         buttons = QHBoxLayout()
         for text, slot in (
-            ("启用 Child Session", self.enable_session),
             ("启动测试程序", self.launch_test_exe),
             ("启动子实例 ok-ww", self.launch_okww),
             ("运行桌面 / Win+D", lambda: self._shortcut("win_d")),
