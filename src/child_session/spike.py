@@ -59,6 +59,7 @@ class SpikeWindow(QWidget):
             ("运行桌面 / Win+D", lambda: self._shortcut("win_d")),
             ("Win+Tab", lambda: self._shortcut("win_tab")),
             ("隐藏/显示桌面", self.toggle_desktop),
+            ("终止桌面分身", self.kill_desktop),
             ("断开并退出", self.shutdown),
         ):
             button = QPushButton(text)
@@ -166,6 +167,26 @@ class SpikeWindow(QWidget):
         visible = self.container.isVisible()
         self.container.setVisible(not visible)
         self.status.setText("已隐藏桌面分身。" if visible else "已显示桌面分身。")
+
+    def kill_desktop(self):
+        try:
+            if self.host:
+                try:
+                    self.host.stop(logoff=False)
+                except Exception:
+                    pass
+                self.host = None
+            if self.container is not None:
+                self.embed_holder.removeWidget(self.container)
+                self.container.setParent(None)
+                self.container.deleteLater()
+                self.container = None
+            session_id = wts_api.kill_child_session()
+            self.status.setText(
+                "已终止桌面分身及其中运行的程序。" if session_id is not None
+                else "没有可终止的桌面分身。")
+        except Exception as ex:
+            self.status.setText(f"终止桌面分身失败：{ex}")
 
     def shutdown(self):
         if self.host:
