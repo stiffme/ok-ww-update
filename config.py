@@ -8,7 +8,7 @@ from ok.util.GlobalConfig import create_basic_options
 from src.game_launcher import get_game_launch_arguments
 from src.task.process_feature import process_feature
 
-version = "v3.7.8-rc.12"
+version = "v3.7.8-rc.13"
 
 
 def _is_child_session_instance() -> bool:
