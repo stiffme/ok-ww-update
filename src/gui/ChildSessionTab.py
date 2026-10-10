@@ -63,9 +63,11 @@ class ChildSessionTab(CustomTab):
         self.win_tab_button = PushButton(FluentIcon.TILES, "Win+Tab")
         self.toggle_button = PushButton(FluentIcon.HIDE, "隐藏/显示")
         self.scale_button = PushButton(FluentIcon.ZOOM, "缩放: 1:1")
+        self.gpu_button = PushButton(FluentIcon.SETTING, "GPU: 软件渲染")
         for widget in (self.enable_button, self.launch_button, self.connect_button,
                        self.disconnect_button, self.kill_button, self.win_d_button,
-                       self.win_tab_button, self.toggle_button, self.scale_button):
+                       self.win_tab_button, self.toggle_button, self.scale_button,
+                       self.gpu_button):
             row.addWidget(widget)
         self.addLayout(row)
 
@@ -84,6 +86,8 @@ class ChildSessionTab(CustomTab):
         self.win_tab_button.clicked.connect(lambda: self._shortcut("win_tab"))
         self.toggle_button.clicked.connect(self.toggle_visibility)
         self.scale_button.clicked.connect(self.toggle_smart_sizing)
+        self.gpu_button.clicked.connect(self.toggle_rdp_gpu)
+        self._refresh_gpu_button()
 
     @property
     def name(self):
@@ -279,6 +283,31 @@ class ChildSessionTab(CustomTab):
         self._status.emit(
             "已切换为适应缩放（画面完整，鼠标会加速）。" if self._smart_sizing
             else "已切换为 1:1（鼠标 1:1，画面会裁剪）。")
+
+    def toggle_rdp_gpu(self):
+        # RDP 会话默认用软件渲染器，游戏在宿主与桌面分身间切换时会因 GPU/驱动
+        # 身份不同而重编译着色器。开启 RDP 硬件 GPU 策略让两个会话共享物理 GPU。
+        # 写注册表需要管理员权限；对下一次新建的 Child Session 生效，不作用于当前会话。
+        try:
+            enabled = wts_api.is_rdp_hw_gpu_enabled()
+            wts_api.set_rdp_hw_gpu(not enabled)
+            enabled = wts_api.is_rdp_hw_gpu_enabled()
+        except Exception as ex:
+            logger.exception("切换 RDP 硬件 GPU 策略失败")
+            self._status.emit(f"切换 RDP 硬件 GPU 失败：{ex}（需以管理员身份运行）")
+            return
+        self._refresh_gpu_button()
+        if enabled:
+            self._status.emit("已启用 RDP 硬件 GPU。重新连接桌面分身后生效，游戏将不再重编译着色器。")
+        else:
+            self._status.emit("已禁用 RDP 硬件 GPU（恢复软件渲染）。若曾出现黑屏，重连后应恢复正常。")
+
+    def _refresh_gpu_button(self):
+        try:
+            enabled = wts_api.is_rdp_hw_gpu_enabled()
+        except Exception:
+            enabled = False
+        self.gpu_button.setText("GPU: 硬件渲染" if enabled else "GPU: 软件渲染")
 
     def _set_desktop_visible(self, visible):
         # 直接对 createWindowContainer 包裹的外来窗口调用 setVisible(False/True) 会在
