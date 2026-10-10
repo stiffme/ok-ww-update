@@ -36,6 +36,7 @@ class RdpHostProcess:
         self._reader = None
         self._running = False
         self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
         self._pending = {}
         self._event_handlers = {}
         self._binary_handlers = []
@@ -85,7 +86,9 @@ class RdpHostProcess:
         try:
             message = json.dumps({"v": 1, "id": request_id, "op": op, "args": args or {}},
                                  ensure_ascii=False)
-            self._client.write_frame(pipe_mod.PAYLOAD_JSON, message.encode("utf-8"))
+            # 串行化写入，避免后台线程（快捷键等）与 GUI 线程并发写帧导致管道流交错。
+            with self._write_lock:
+                self._client.write_frame(pipe_mod.PAYLOAD_JSON, message.encode("utf-8"))
             if not event.wait(timeout):
                 raise RdpHostError(f"RdpHost 请求超时：{op}")
             response = slot["response"]
