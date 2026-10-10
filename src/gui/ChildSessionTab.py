@@ -39,6 +39,7 @@ class ChildSessionTab(CustomTab):
         self.container = None
         self._busy = False
         self._launching = False
+        self._desktop_visible = False
 
         # 状态栏（先创建，后面的信号连接要引用 self.status）
         self.status = BodyLabel("桌面分身未连接。点击「连接桌面分身」开始。")
@@ -185,6 +186,7 @@ class ChildSessionTab(CustomTab):
         self.container = QWidget.createWindowContainer(window, self.view)
         self.container.setMinimumSize(320, 200)
         self.embed_layout.addWidget(self.container, stretch=1)
+        self._desktop_visible = True
 
     def _clear_embed(self):
         if self.container is not None:
@@ -221,12 +223,32 @@ class ChildSessionTab(CustomTab):
             self._status.emit(f"发送快捷键失败：{ex}")
 
     def toggle_visibility(self):
-        if self.container is None:
+        if self.container is None or not self.host:
             self._status.emit("尚未连接桌面分身。")
             return
-        visible = self.container.isVisible()
-        self.container.setVisible(not visible)
-        self._status.emit("已隐藏桌面分身。" if visible else "已显示桌面分身。")
+        self._set_desktop_visible(not self._desktop_visible)
+        self._status.emit("已隐藏桌面分身。" if not self._desktop_visible else "已显示桌面分身。")
+
+    def _set_desktop_visible(self, visible):
+        # 直接对 createWindowContainer 包裹的外来窗口调用 setVisible(False/True) 会在
+        # 再次显示时把原生窗口甩到屏幕左上角（Qt 重新嵌入外来窗口的已知问题）。
+        # 因此改用 Win32 ShowWindow 隐藏/显示 RdpHost 原生窗口，并折叠/恢复容器高度。
+        if visible:
+            self.container.setMinimumHeight(200)
+            self.container.setMaximumHeight(16777215)
+        else:
+            self.container.setMinimumHeight(0)
+            self.container.setMaximumHeight(0)
+        try:
+            import win32con
+            import win32gui
+
+            hwnd = int(self.host.host_hwnd or 0)
+            if hwnd:
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOW if visible else win32con.SW_HIDE)
+        except Exception as ex:
+            logger.warning(f"切换 RdpHost 窗口可见性失败：{ex}")
+        self._desktop_visible = visible
 
     def _on_download_progress(self, percent, size_str):
         self._status.emit(f"正在下载 RdpHost… {percent:.0f}% ({size_str})")
