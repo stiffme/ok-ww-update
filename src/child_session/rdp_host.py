@@ -171,7 +171,7 @@ class RdpHostProcess:
 
     # -- convenience wrappers -------------------------------------------------
 
-    def connect(self, width=None, height=None, smart_sizing=True, audio_muted=False,
+    def connect(self, width=None, height=None, smart_sizing=False, audio_muted=False,
                 send_system_shortcuts=True):
         return self.request("connect", {
             "width": width or self._width,
