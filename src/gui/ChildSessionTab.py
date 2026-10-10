@@ -193,10 +193,17 @@ class ChildSessionTab(CustomTab):
         if not self.host:
             self._status.emit("尚未连接桌面分身。")
             return
+        # 放到后台线程：send_shortcut 是同步管道往返，Win+Tab 会触发子会话渲染
+        # Task View 的帧洪流，RdpHost 回包变慢时若在 GUI 线程上等待会把整个窗口卡住。
+        threading.Thread(target=self._shortcut_worker, args=(name,), daemon=True,
+                         name=f"childsession-shortcut-{name}").start()
+
+    def _shortcut_worker(self, name):
         try:
             self.host.send_shortcut(name)
             self._status.emit(f"已发送 {name}")
         except Exception as ex:
+            logger.warning(f"发送快捷键失败：{ex}")
             self._status.emit(f"发送快捷键失败：{ex}")
 
     def toggle_visibility(self):
