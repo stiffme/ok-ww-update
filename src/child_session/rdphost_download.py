@@ -4,7 +4,9 @@ The self-contained helper (~146 MiB) is not committed to git (GitHub's 100 MiB
 limit) and is not built on end-user machines. It is published as a GitHub Release
 asset (see `.github/workflows/rdphost-release.yml`), together with a `.sha256`
 sidecar. This module downloads it on first use when it is missing from
-`assets/native/RdpHost/`.
+`assets/native/RdpHost/`, and re-downloads it whenever the configured release URL
+changes (tracked via a `.url` marker next to the exe), so publishing a new
+RdpHost.exe release tag rolls out automatically without deleting the cached file.
 """
 
 import hashlib
@@ -19,6 +21,7 @@ from src.child_session.rdp_host import RdpHostProcess
 logger = Logger.get_logger(__name__)
 
 _SHA256_URL_SUFFIX = ".sha256"
+_MARKER_SUFFIX = ".url"
 _TIMEOUT_SECONDS = 30
 
 
@@ -59,19 +62,41 @@ def _verify_sha256(path, expected):
     return sha256_hash.hexdigest() == expected
 
 
+def _is_current(exe, url):
+    """True when the cached exe was downloaded from `url` (marker sidecar matches)."""
+    try:
+        with open(exe + _MARKER_SUFFIX, "r", encoding="ascii") as f:
+            return f.read().strip() == url
+    except OSError:
+        return False
+
+
+def _write_marker(exe, url):
+    try:
+        with open(exe + _MARKER_SUFFIX, "w", encoding="ascii") as f:
+            f.write(url)
+    except OSError as exc:
+        logger.warning(f"写入 RdpHost 版本标记失败：{exc}")
+
+
 def ensure_rdphost(callback=None):
-    """Return the path to RdpHost.exe, downloading + verifying it if missing.
+    """Return the path to RdpHost.exe, downloading + verifying it if missing or stale.
 
     `callback(percent_float, size_str)` is invoked during the download (same
     contract as `ok.core.downloads.download_file_with_progress`).
+
+    The exe is re-downloaded when the configured `rdphost.url` differs from the
+    `.url` marker written beside it, so bumping the release tag in `config.py`
+    rolls the new helper out to users automatically.
     """
     exe = RdpHostProcess.exe_path()
-    if os.path.isfile(exe):
+    url = _url()
+    if os.path.isfile(exe) and _is_current(exe, url):
         return exe
 
-    url = _url()
+    missing = not os.path.isfile(exe)
     expected_sha256 = _fetch_sha256(url)
-    logger.info(f"RdpHost.exe 缺失，开始下载：{url}")
+    logger.info(f"RdpHost.exe {'缺失' if missing else '版本过期'}，开始下载：{url}")
     download_file_with_progress(url, exe, callback=callback)
 
     if expected_sha256 and not _verify_sha256(exe, expected_sha256):
@@ -81,5 +106,6 @@ def ensure_rdphost(callback=None):
             pass
         raise RdpHostDownloadError("RdpHost.exe 下载校验失败（SHA256 不匹配），已删除损坏文件。")
 
-    logger.info(f"RdpHost.exe 下载完成：{exe}")
+    _write_marker(exe, url)
+    logger.info(f"RdpHost.exe 就绪：{exe}")
     return exe
