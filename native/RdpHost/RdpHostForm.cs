@@ -14,12 +14,14 @@ internal sealed class RdpHostForm : Form
 {
     private readonly RdpActiveXHost _rdpHost = new();
     private readonly System.Windows.Forms.Timer _focusTimer = new();
+    private readonly CursorCapture _cursorCapture;
     private bool _lastInputFocused;
 
     internal event EventHandler? LoginCompleted;
     internal event EventHandler<RdpConnectionFailedEventArgs>? ConnectionFailed;
     internal event EventHandler<(int Width, int Height)>? RemoteDesktopSizeChanged;
     internal event EventHandler<bool>? InputWindowFocusChanged;
+    internal event EventHandler<bool>? CursorCapturedChanged;
 
     internal RdpHostForm(int width, int height)
     {
@@ -37,6 +39,13 @@ internal sealed class RdpHostForm : Form
         _rdpHost.ConnectionFailed += (_, e) => ConnectionFailed?.Invoke(this, e);
         _rdpHost.RemoteDesktopSizeChanged += (_, size) => RemoteDesktopSizeChanged?.Invoke(this, size);
 
+        _cursorCapture = new CursorCapture(this);
+        _cursorCapture.CapturedChanged += (_, _) => CursorCapturedChanged?.Invoke(this, _cursorCapture.Captured);
+
+        // A dropped connection must release the trap too, otherwise the physical cursor
+        // stays clipped with no remote cursor to follow.
+        _rdpHost.ConnectionFailed += (_, _) => _cursorCapture.Release();
+
         _focusTimer.Interval = 200;
         _focusTimer.Tick += (_, _) => PollInputFocus();
         _focusTimer.Start();
@@ -49,6 +58,8 @@ internal sealed class RdpHostForm : Form
 
     internal bool InputFocused => _rdpHost.IsInputWindowFocused();
 
+    internal bool CursorCaptured => _cursorCapture.Captured;
+
     internal void Connect(int width, int height, bool smartSizing, bool audioMuted, bool sendSystemShortcuts)
     {
         _rdpHost.SetSmartSizing(smartSizing);
@@ -57,7 +68,11 @@ internal sealed class RdpHostForm : Form
         _rdpHost.ConnectToChildSession(new DrawingSize(width, height));
     }
 
-    internal void Disconnect() => _rdpHost.DisconnectSession();
+    internal void Disconnect()
+    {
+        _cursorCapture.Release();
+        _rdpHost.DisconnectSession();
+    }
 
     internal void Reconnect(int width, int height) =>
         _rdpHost.ReconnectToChildSession(new DrawingSize(width, height));
@@ -112,5 +127,16 @@ internal sealed class RdpHostForm : Form
             _lastInputFocused = focused;
             InputWindowFocusChanged?.Invoke(this, focused);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _cursorCapture.Dispose();
+            _focusTimer.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 }
