@@ -235,22 +235,31 @@ class ChildSessionTab(CustomTab):
     def _set_desktop_visible(self, visible):
         # 直接对 createWindowContainer 包裹的外来窗口调用 setVisible(False/True) 会在
         # 再次显示时把原生窗口甩到屏幕左上角（Qt 重新嵌入外来窗口的已知问题）。
-        # 因此改用 Win32 ShowWindow 隐藏/显示 RdpHost 原生窗口，并折叠/恢复容器高度。
-        if visible:
-            self.container.setMinimumHeight(200)
-            self.container.setMaximumHeight(16777215)
-        else:
-            self.container.setMinimumHeight(0)
-            self.container.setMaximumHeight(0)
+        # 因此只用 Win32 ShowWindow 切换原生窗口可见性，并折叠/恢复容器高度来回收空间。
+        #
+        # 顺序很关键：容器几何变化时 Qt 会同步调整外来窗口的尺寸与位置，所以外来窗口
+        # 必须在容器变化期间保持可见，否则隐藏期间丢掉的位置更新会让它再次显示时错位
+        # 到左上角。
+        #   - 隐藏：先折叠容器（可见窗口随之缩到 0），再 SW_HIDE。
+        #   - 显示：先 SW_SHOW（窗口在 0 尺寸下先恢复可见），再恢复容器高度（窗口随之放大到正确位置）。
         try:
             import win32con
             import win32gui
 
             hwnd = int(self.host.host_hwnd or 0)
+        except Exception:
+            hwnd = 0
+
+        if visible:
             if hwnd:
-                win32gui.ShowWindow(hwnd, win32con.SW_SHOW if visible else win32con.SW_HIDE)
-        except Exception as ex:
-            logger.warning(f"切换 RdpHost 窗口可见性失败：{ex}")
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+            self.container.setMinimumHeight(200)
+            self.container.setMaximumHeight(16777215)
+        else:
+            self.container.setMinimumHeight(0)
+            self.container.setMaximumHeight(0)
+            if hwnd:
+                win32gui.ShowWindow(hwnd, win32con.SW_HIDE)
         self._desktop_visible = visible
 
     def _on_download_progress(self, percent, size_str):
