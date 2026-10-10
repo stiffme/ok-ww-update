@@ -31,12 +31,14 @@ class ChildSessionTab(CustomTab):
     _status = Signal(str)
     _download_progress = Signal(float, str)
     _connect_finished = Signal(object)  # (host, hello) | (None, error_str)
+    _launch_finished = Signal()
 
     def __init__(self):
         super().__init__()
         self.host = None
         self.container = None
         self._busy = False
+        self._launching = False
 
         # 状态栏（先创建，后面的信号连接要引用 self.status）
         self.status = BodyLabel("桌面分身未连接。点击「连接桌面分身」开始。")
@@ -45,6 +47,7 @@ class ChildSessionTab(CustomTab):
         self._status.connect(self.status.setText)
         self._download_progress.connect(self._on_download_progress)
         self._connect_finished.connect(self._on_connect_finished)
+        self._launch_finished.connect(self._on_launch_finished)
 
         # 控制按钮
         row = QHBoxLayout()
@@ -98,10 +101,15 @@ class ChildSessionTab(CustomTab):
             self._status.emit(f"启用 Child Session 失败：{ex}")
 
     def launch_okww(self):
+        if self._launching:
+            self._status.emit("子实例正在启动中，请勿重复点击。")
+            return
         session_id = wts_api.get_child_session_id()
         if session_id is None:
             self._status.emit("没有可用的 Child Session，请先启用。")
             return
+        self._launching = True
+        self.launch_button.setEnabled(False)
         self._status.emit("正在把子实例 ok-ww 启动进 Child Session…")
         threading.Thread(target=self._launch_okww_worker, args=(session_id,),
                          daemon=True, name="childsession-launch").start()
@@ -114,6 +122,12 @@ class ChildSessionTab(CustomTab):
         except Exception as ex:
             logger.exception("启动子实例失败")
             self._status.emit(f"启动子实例失败：{ex}")
+        finally:
+            self._launch_finished.emit()
+
+    def _on_launch_finished(self):
+        self._launching = False
+        self.launch_button.setEnabled(True)
 
     def connect_desktop(self):
         if self._busy:
