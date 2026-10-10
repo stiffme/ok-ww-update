@@ -8,7 +8,7 @@ from ok.util.GlobalConfig import create_basic_options
 from src.game_launcher import get_game_launch_arguments
 from src.task.process_feature import process_feature
 
-version = "v3.7.4"
+version = "v3.7.8-rc.1"
 
 
 def _is_child_session_instance() -> bool:
@@ -181,7 +181,8 @@ config = {
     'blur_area': blur_area,
     'gui_icon': 'icons/icon.png',
     'global_configs': [basic_config_option, key_config_option, char_config_option, monthly_card_config_option],
-    'custom_tabs': [["src.gui.CharacterCodeTab", "CharacterCodeTab"]],
+    'custom_tabs': [["src.gui.CharacterCodeTab", "CharacterCodeTab"],
+                    ["src.gui.ChildSessionTab", "ChildSessionTab"]],
     'ocr': {
         'lib': 'onnxocr',
         'auto_simplify': True,
