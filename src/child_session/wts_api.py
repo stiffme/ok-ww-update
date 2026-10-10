@@ -12,6 +12,7 @@ are resolved dynamically and may be missing on some builds.
 """
 
 import ctypes
+import os
 import sys
 from ctypes import wintypes
 
@@ -31,6 +32,21 @@ _RDP_TCP_KEY = r"SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RD
 _TERM_SERVICE_PARAMS_KEY = r"SYSTEM\CurrentControlSet\Services\TermService\Parameters"
 _RDPWRAP_LIBRARY = "rdpwrap.dll"
 
+# 游戏客户端与启动器进程名（与 config.py `windows.exe` 及注册表启动器名一致），
+# 用于强制终止时识别 Child Session 里运行的游戏。
+_GAME_PROCESS_NAMES = ("client-win64-shipping.exe", "wuthering waves.exe")
+
+_PROCESS_TERMINATE = 0x0001
+
+
+class _WTS_PROCESS_INFO(ctypes.Structure):
+    _fields_ = [
+        ("SessionId", wintypes.DWORD),
+        ("ProcessId", wintypes.DWORD),
+        ("pProcessName", ctypes.c_char_p),
+        ("pUserSid", ctypes.c_void_p),
+    ]
+
 
 class ChildSessionError(RuntimeError):
     """Raised when a child-session Win32 call fails."""
@@ -43,6 +59,8 @@ if IS_WINDOWS:
     _WTSIsChildSessionsEnabled = getattr(_wtsapi32, "WTSIsChildSessionsEnabled", None)
     _WTSGetChildSessionId = getattr(_wtsapi32, "WTSGetChildSessionId", None)
     _WTSLogoffSession = getattr(_wtsapi32, "WTSLogoffSession", None)
+    _WTSEnumerateProcesses = getattr(_wtsapi32, "WTSEnumerateProcessesA", None)
+    _WTSFreeMemory = getattr(_wtsapi32, "WTSFreeMemory", None)
 
     if _WTSEnableChildSessions is not None:
         _WTSEnableChildSessions.argtypes = [wintypes.BOOL]
@@ -56,11 +74,23 @@ if IS_WINDOWS:
     if _WTSLogoffSession is not None:
         _WTSLogoffSession.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.BOOL]
         _WTSLogoffSession.restype = wintypes.BOOL
+    if _WTSEnumerateProcesses is not None:
+        _WTSEnumerateProcesses.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+            ctypes.POINTER(ctypes.POINTER(_WTS_PROCESS_INFO)),
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        _WTSEnumerateProcesses.restype = wintypes.BOOL
+    if _WTSFreeMemory is not None:
+        _WTSFreeMemory.argtypes = [ctypes.c_void_p]
+        _WTSFreeMemory.restype = None
 else:  # pragma: no cover - non-Windows dev only
     _WTSEnableChildSessions = None
     _WTSIsChildSessionsEnabled = None
     _WTSGetChildSessionId = None
     _WTSLogoffSession = None
+    _WTSEnumerateProcesses = None
+    _WTSFreeMemory = None
 
 
 def is_supported() -> bool:
@@ -122,6 +152,75 @@ def terminate_child_session(wait=True):
     if session_id is None:
         return None
     return logoff_child_session(session_id, wait=wait)
+
+
+def _child_okww_process_name():
+    """Lowercased exe name of this app's child instance (frozen exe or python)."""
+    if getattr(sys, "frozen", False):
+        return os.path.basename(sys.executable).lower()
+    return "python.exe"
+
+
+def _processes_in_session(session_id):
+    """Return {pid: lowercase_name} for every process running in `session_id`."""
+    if _WTSEnumerateProcesses is None:
+        raise ChildSessionError("当前系统不支持枚举 Child Session 进程")
+    infos = ctypes.POINTER(_WTS_PROCESS_INFO)()
+    count = wintypes.DWORD()
+    if not _WTSEnumerateProcesses(None, 0, 1, ctypes.byref(infos), ctypes.byref(count)):
+        _raise_last_error("无法枚举 Child Session 进程")
+    result = {}
+    try:
+        for i in range(count.value):
+            info = infos[i]
+            if info.SessionId == session_id:
+                name = (info.pProcessName or b"").decode("ascii", "ignore").lower()
+                result[info.ProcessId] = name
+    finally:
+        if _WTSFreeMemory is not None:
+            _WTSFreeMemory(infos)
+    return result
+
+
+def terminate_process(pid):
+    """Force-terminate `pid`. Returns True on success, False otherwise (non-fatal)."""
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(_PROCESS_TERMINATE, False, pid)
+    if not handle:
+        return False
+    try:
+        return bool(kernel32.TerminateProcess(handle, 0xFFFFFFFF))
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def kill_child_session():
+    """Force-terminate the game + child ok-ww in the child session, then log off.
+
+    Returns the session id that was torn down, or None if there was no child
+    session. Logging off terminates anything left over, so this is a full teardown
+    of the desktop clone and everything running inside it.
+    """
+    session_id = get_child_session_id()
+    if session_id is None:
+        return None
+
+    killable = set(_GAME_PROCESS_NAMES)
+    killable.add(_child_okww_process_name())
+    try:
+        processes = _processes_in_session(session_id)
+    except Exception as ex:
+        logger.warning(f"枚举 Child Session 进程失败（仍会注销会话）：{ex}")
+        processes = {}
+    for pid, name in processes.items():
+        if name in killable:
+            if terminate_process(pid):
+                logger.info(f"已终止 Child Session 进程：{name} (pid={pid})")
+            else:
+                logger.warning(f"无法终止 Child Session 进程：{name} (pid={pid})")
+
+    logoff_child_session(session_id, wait=True)
+    return session_id
 
 
 def get_rdp_port() -> int:
