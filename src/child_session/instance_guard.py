@@ -28,15 +28,15 @@ def acquire_child_instance_lock():
     互斥体随进程退出自动释放，崩溃不会留下陈旧锁。
     """
     import win32api
-    import win32con
     import win32event
+    import winerror
 
     global _lock_handle
     handle = win32event.CreateMutex(None, True, _MUTEX_NAME)
     if handle == 0:
         # 意外失败时不要挡住子实例启动。
         return True
-    already_exists = win32api.GetLastError() == win32con.ERROR_ALREADY_EXISTS
+    already_exists = win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS
     if not already_exists:
         # 持有句柄直到进程结束，保证互斥体在存活期内一直被占用。
         _lock_handle = handle
