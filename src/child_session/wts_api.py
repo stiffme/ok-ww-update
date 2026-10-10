@@ -32,6 +32,13 @@ _RDP_TCP_KEY = r"SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RD
 _TERM_SERVICE_PARAMS_KEY = r"SYSTEM\CurrentControlSet\Services\TermService\Parameters"
 _RDPWRAP_LIBRARY = "rdpwrap.dll"
 
+# "使用硬件图形适配器处理所有远程桌面服务会话" 组策略键。默认情况下 RDP
+# 会话（含回环 Child Session）使用软件渲染器 Microsoft Basic Render Driver，
+# 导致游戏在宿主与桌面分身间切换时因 GPU/驱动身份不同而重编译着色器。置 1
+# 后 Child Session 走物理 GPU，两个会话共享同一 GPU+驱动身份，避免重编译。
+_RDP_GPU_POLICY_KEY = r"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+_RDP_GPU_POLICY_VALUE = "bEnumerateHWBeforeSW"
+
 # 游戏客户端与启动器进程名（与 config.py `windows.exe` 及注册表启动器名一致），
 # 用于强制终止时识别 Child Session 里运行的游戏。
 _GAME_PROCESS_NAMES = ("client-win64-shipping.exe", "wuthering waves.exe")
@@ -255,6 +262,40 @@ def is_rdp_wrapper_enabled() -> bool:
         return False
 
 
+def is_rdp_hw_gpu_enabled() -> bool:
+    """True when the RDP hardware-GPU policy (bEnumerateHWBeforeSW) is set to 1."""
+    if not IS_WINDOWS:
+        return False
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _RDP_GPU_POLICY_KEY, 0,
+                            winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            value, _ = winreg.QueryValueEx(key, _RDP_GPU_POLICY_VALUE)
+            return value == 1
+    except OSError:
+        return False
+
+
+def set_rdp_hw_gpu(enabled=True):
+    """Set the RDP hardware-GPU policy (bEnumerateHWBeforeSW). Requires admin.
+
+    True enables hardware rendering for RDP sessions (physical GPU); False reverts
+    to software rendering. Takes effect the next time the child session is created.
+    """
+    if not IS_WINDOWS:
+        raise ChildSessionError("桌面分身仅在 Windows 上可用。")
+    import winreg
+
+    try:
+        with winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, _RDP_GPU_POLICY_KEY, 0,
+                                winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY) as key:
+            winreg.SetValueEx(key, _RDP_GPU_POLICY_VALUE, 0, winreg.REG_DWORD,
+                              1 if enabled else 0)
+    except OSError as ex:
+        raise ChildSessionError(f"写入 RDP 硬件 GPU 策略失败：{ex}")
+
+
 if __name__ == "__main__":
     # Admin-only smoke test: python -m src.child_session.wts_api
     print("supported:", is_supported())
@@ -263,3 +304,4 @@ if __name__ == "__main__":
         print("child id :", get_child_session_id())
     print("rdp port :", get_rdp_port())
     print("rdpwrap  :", is_rdp_wrapper_enabled())
+    print("hw gpu   :", is_rdp_hw_gpu_enabled())
