@@ -155,6 +155,9 @@ class ChildSessionTab(CustomTab):
                           lambda d: self._status.emit(f"RDP 连接失败：{d.get('message')}"))
             host.on_event("input_window_focus",
                           lambda d: self._status.emit(f"桌面分身输入焦点：{d.get('focused')}"))
+            host.on_event("cursor_captured",
+                          lambda d: self._status.emit(
+                              "已捕获鼠标，按 Alt 释放。" if d.get("captured") else "已释放鼠标。"))
             hello = host.start()
             host.connect()
             self._connect_finished.emit((host, hello))
