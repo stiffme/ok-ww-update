@@ -54,6 +54,10 @@ internal static class Program
         {
             ["focused"] = focused,
         });
+        form.CursorCapturedChanged += (_, captured) => _ = pipe.SendEventAsync("cursor_captured", new JsonObject
+        {
+            ["captured"] = captured,
+        });
 
         form.Shown += (_, _) => pipe.Start();
         Application.Run(form);
