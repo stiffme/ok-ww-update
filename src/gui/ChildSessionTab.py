@@ -40,6 +40,7 @@ class ChildSessionTab(CustomTab):
         self._busy = False
         self._launching = False
         self._desktop_visible = False
+        self._smart_sizing = False
 
         # 状态栏（先创建，后面的信号连接要引用 self.status）
         self.status = BodyLabel("桌面分身未连接。点击「连接桌面分身」开始。")
@@ -61,9 +62,10 @@ class ChildSessionTab(CustomTab):
         self.win_d_button = PushButton(FluentIcon.FULL_SCREEN, "Win+D")
         self.win_tab_button = PushButton(FluentIcon.TILES, "Win+Tab")
         self.toggle_button = PushButton(FluentIcon.HIDE, "隐藏/显示")
+        self.scale_button = PushButton(FluentIcon.ZOOM, "缩放: 1:1")
         for widget in (self.enable_button, self.launch_button, self.connect_button,
                        self.disconnect_button, self.kill_button, self.win_d_button,
-                       self.win_tab_button, self.toggle_button):
+                       self.win_tab_button, self.toggle_button, self.scale_button):
             row.addWidget(widget)
         self.addLayout(row)
 
@@ -81,6 +83,7 @@ class ChildSessionTab(CustomTab):
         self.win_d_button.clicked.connect(lambda: self._shortcut("win_d"))
         self.win_tab_button.clicked.connect(lambda: self._shortcut("win_tab"))
         self.toggle_button.clicked.connect(self.toggle_visibility)
+        self.scale_button.clicked.connect(self.toggle_smart_sizing)
 
     @property
     def name(self):
@@ -161,7 +164,7 @@ class ChildSessionTab(CustomTab):
                           lambda d: self._status.emit(
                               "已捕获鼠标，按 Alt 释放。" if d.get("captured") else "已释放鼠标。"))
             hello = host.start()
-            host.connect()
+            host.connect(smart_sizing=self._smart_sizing)
             self._connect_finished.emit((host, hello))
         except Exception as ex:
             logger.exception("连接桌面分身失败")
@@ -258,6 +261,24 @@ class ChildSessionTab(CustomTab):
             return
         self._set_desktop_visible(not self._desktop_visible)
         self._status.emit("已隐藏桌面分身。" if not self._desktop_visible else "已显示桌面分身。")
+
+    def toggle_smart_sizing(self):
+        # 1:1（smart_sizing 关）= 鼠标 1:1 但画面会裁剪；适应缩放 = 画面完整但鼠标加速。
+        # 在 RDP 端实时切换 SmartSizing，无需重连。
+        if not self.host:
+            self._status.emit("尚未连接桌面分身。")
+            return
+        self._smart_sizing = not self._smart_sizing
+        try:
+            self.host.set_smart_sizing(self._smart_sizing)
+        except Exception as ex:
+            logger.warning(f"切换缩放失败：{ex}")
+            self._status.emit(f"切换缩放失败：{ex}")
+            return
+        self.scale_button.setText("缩放: 适应" if self._smart_sizing else "缩放: 1:1")
+        self._status.emit(
+            "已切换为适应缩放（画面完整，鼠标会加速）。" if self._smart_sizing
+            else "已切换为 1:1（鼠标 1:1，画面会裁剪）。")
 
     def _set_desktop_visible(self, visible):
         # 直接对 createWindowContainer 包裹的外来窗口调用 setVisible(False/True) 会在
