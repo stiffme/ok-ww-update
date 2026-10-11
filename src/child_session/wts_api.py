@@ -34,8 +34,8 @@ _RDPWRAP_LIBRARY = "rdpwrap.dll"
 
 # "使用硬件图形适配器处理所有远程桌面服务会话" 组策略键。默认情况下 RDP
 # 会话（含回环 Child Session）使用软件渲染器 Microsoft Basic Render Driver，
-# 导致游戏在宿主与桌面分身间切换时因 GPU/驱动身份不同而重编译着色器。置 1
-# 后 Child Session 走物理 GPU，两个会话共享同一 GPU+驱动身份，避免重编译。
+# 分身里的游戏性能差。置 1 后 Child Session 走物理 GPU。注意：RDP 会话的显卡
+# 适配器标识仍与主桌面不同，着色器缓存各自编译一次，此策略不能消除着色器重编译。
 _RDP_GPU_POLICY_KEY = r"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
 _RDP_GPU_POLICY_VALUE = "bEnumerateHWBeforeSW"
 
