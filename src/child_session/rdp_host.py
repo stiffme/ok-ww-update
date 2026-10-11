@@ -63,6 +63,7 @@ class RdpHostProcess:
             exe, "--pipe", self._pipe_name,
             "--host-width", str(self._width),
             "--host-height", str(self._height),
+            "--parent-pid", str(os.getpid()),
         ])
         client = pipe_mod.PipeClient(self._pipe_name)
         client.connect(timeout=timeout)
