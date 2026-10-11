@@ -187,17 +187,19 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                 if self.pick_echo():
                     logger.info(f'farm echo on the face')
                     dropped = True
-                elif self.config.get('Echo Pickup Method', "Yolo") == "Yolo":
-                    dropped = \
-                        self.yolo_find_echo(turn=self._in_realm, use_color=False, time_out=self.yolo_time_out,
-                                            threshold=self.yolo_threshold)[0]
-                    logger.info(f'farm echo yolo find {dropped}')
-                elif self.config.get('Echo Pickup Method', "Yolo") == "Run in Circle":
-                    dropped = self.run_in_circle_to_find_echo(circle_count=2)
-                    logger.info(f'farm echo walk_circle_find_echo {dropped}')
                 else:
-                    dropped = self.walk_find_echo()
-                    logger.info(f'farm echo walk_find_echo {dropped}')
+                    self.middle_click(after_sleep=0.2)
+                    if self.config.get('Echo Pickup Method', "Yolo") == "Yolo":
+                        dropped = \
+                            self.yolo_find_echo(turn=self._in_realm, use_color=False, time_out=self.yolo_time_out,
+                                                threshold=self.yolo_threshold)[0]
+                        logger.info(f'farm echo yolo find {dropped}')
+                    elif self.config.get('Echo Pickup Method', "Yolo") == "Run in Circle":
+                        dropped = self.run_in_circle_to_find_echo(circle_count=2)
+                        logger.info(f'farm echo walk_circle_find_echo {dropped}')
+                    else:
+                        dropped = self.walk_find_echo()
+                        logger.info(f'farm echo walk_find_echo {dropped}')
                 self.incr_drop(dropped)
                 if not self.bypass_end_wait:
                     if dropped and not self._has_treasure:
@@ -479,29 +481,25 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         # 重新挑战后等待1秒让场景加载
         self.sleep(1)
         if not self.in_combat():
-            if not self._has_treasure:
-                self.teleport_to_nearest_boss()
-                self.run_until(lambda: self.in_combat() or self.find_treasure_icon(), 'w', time_out=12, running=True,
-                               target=True)
-            else:
-                self._approach_unnamed_explorer()
+            self._approach_unnamed_explorer()
             self.execute_treasure_hunt()
         # 等待进入战斗，无铭探索者可能需要更长时间
         self.wait_until(
             self.in_combat, raise_if_not_found=False, time_out=10
         )
 
-    def _approach_unnamed_explorer(self, max_attempts=3):
+    def _approach_unnamed_explorer(self, max_attempts=5):
         """无铭探索者无索敌，重新挑战后必须主动贴近才能触发战斗。
-        单次前跑或小地图导航都可能因刷新点太远失败，故做有界重试：
-        每轮先摆正朝向再前跑，失败则回退小地图导航(内部含传送兜底)。"""
+        小地图上能看到 boss 图钉，故每轮先按小地图转向 boss 再靠近
+        (内部含传送兜底)，正对前方冲刺只作二次兜底。做有界重试，
+        避免离得远时盲跑跑反方向导致无法触发下一场。"""
         for attempt in range(1, max_attempts + 1):
             self.log_info(f'approach unnamed explorer attempt {attempt}/{max_attempts}')
-            self.center_camera()
-            if self.run_until(lambda: self.in_combat(), 'w', time_out=10, running=True, target=True):
-                return True
-            self.go_to_boss_minimap(time_out=8)
+            self.go_to_boss_minimap(time_out=12)
             if self.in_combat():
+                return True
+            self.center_camera()
+            if self.run_until(lambda: self.in_combat(), 'w', time_out=8, running=True, target=True):
                 return True
         self.log_info('approach unnamed explorer failed, all attempts exhausted')
         return False
