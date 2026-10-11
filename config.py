@@ -8,7 +8,7 @@ from ok.util.GlobalConfig import create_basic_options
 from src.game_launcher import get_game_launch_arguments
 from src.task.process_feature import process_feature
 
-version = "v3.7.8-rc.18"
+version = "v3.7.8-rc.19"
 
 
 def _is_child_session_instance() -> bool:
@@ -304,7 +304,7 @@ config = {
     # 由 .github/workflows/rdphost-release.yml 构建并上传 RdpHost.exe 与 RdpHost.exe.sha256。
     # 发布时把 url 改成实际发布仓库与 tag。
     'rdphost': {
-        'url': 'https://github.com/stiffme/ok-wuthering-waves/releases/download/v3.7.8-rc.18/RdpHost.exe',
+        'url': 'https://github.com/stiffme/ok-wuthering-waves/releases/download/v3.7.8-rc.19/RdpHost.exe',
     },
 
 }
