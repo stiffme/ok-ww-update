@@ -153,7 +153,7 @@ class ChildSessionTab(CustomTab):
                           lambda d: self._status.emit(f"桌面分身输入焦点：{d.get('focused')}"))
             host.on_event("cursor_captured",
                           lambda d: self._status.emit(
-                              "已捕获鼠标，按 Alt 释放。" if d.get("captured") else "已释放鼠标。"))
+                              "游戏已捕获鼠标（相对模式）。" if d.get("captured") else "鼠标已释放（桌面模式）。"))
             hello = host.start()
             host.connect(smart_sizing=self._smart_sizing)
             self._connect_finished.emit((host, hello))
