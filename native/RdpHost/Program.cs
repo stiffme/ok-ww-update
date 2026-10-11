@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace RdpHost;
@@ -38,6 +39,11 @@ internal static class Program
         var form = new RdpHostForm(options.Width, options.Height);
         var pipe = new PipeServer(options.PipeName, request => Dispatch(form, request));
 
+        if (options.ParentPid is int parentPid)
+        {
+            WatchParentProcess(parentPid, form);
+        }
+
         form.LoginCompleted += (_, _) => _ = pipe.SendEventAsync("login_complete");
         form.ConnectionFailed += (_, e) => _ = pipe.SendEventAsync("connection_failed", new JsonObject
         {
@@ -54,9 +60,9 @@ internal static class Program
         {
             ["focused"] = focused,
         });
-        form.CursorCapturedChanged += (_, captured) => _ = pipe.SendEventAsync("cursor_captured", new JsonObject
+        form.MouseInputModeChanged += (_, relative) => _ = pipe.SendEventAsync("cursor_captured", new JsonObject
         {
-            ["captured"] = captured,
+            ["captured"] = relative,
         });
 
         form.Shown += (_, _) => pipe.Start();
@@ -194,13 +200,14 @@ internal static class Program
         return obj[name] is JsonValue value && value.TryGetValue(out bool result) ? result : fallback;
     }
 
-    private sealed record Options(string? PipeName, int Width, int Height);
+    private sealed record Options(string? PipeName, int Width, int Height, int? ParentPid);
 
     private static Options ParseArguments(string[] args)
     {
         string? pipe = null;
         var width = 1920;
         var height = 1080;
+        int? parentPid = null;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -214,9 +221,63 @@ internal static class Program
                 case "--host-height" when i + 1 < args.Length:
                     height = int.TryParse(args[++i], out var h) ? h : height;
                     break;
+                case "--parent-pid" when i + 1 < args.Length:
+                    parentPid = int.TryParse(args[++i], out var pid) ? pid : null;
+                    break;
             }
         }
 
-        return new Options(pipe, width, height);
+        return new Options(pipe, width, height, parentPid);
+    }
+
+    private static void WatchParentProcess(int parentPid, RdpHostForm form)
+    {
+        // If ok-ww exits without sending "shutdown" (a crash, or the user closes the
+        // window directly), this helper would otherwise keep running forever: its RDP
+        // connection stays open and the ActiveX keyboard hook keeps watching input.
+        // That orphans the loopback connection and can swallow host keyboard input,
+        // which is exactly the "terminal can't type after closing the clone" symptom.
+        // Poll the parent and tear down cleanly the moment it disappears.
+        var thread = new Thread(() =>
+        {
+            while (true)
+            {
+                Thread.Sleep(2000);
+                var parentAlive = true;
+                try
+                {
+                    using var parent = Process.GetProcessById(parentPid);
+                }
+                catch (ArgumentException)
+                {
+                    parentAlive = false;
+                }
+
+                if (parentAlive)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    form.BeginInvoke(new Action(() =>
+                    {
+                        form.Disconnect();
+                        form.Close();
+                    }));
+                }
+                catch (InvalidOperationException)
+                {
+                    Environment.Exit(0);
+                }
+
+                return;
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "parent-watchdog",
+        };
+        thread.Start();
     }
 }
