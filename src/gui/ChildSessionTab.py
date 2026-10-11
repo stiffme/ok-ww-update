@@ -284,8 +284,9 @@ class ChildSessionTab(CustomTab):
             else "已切换为 1:1（鼠标 1:1，画面会裁剪）。")
 
     def toggle_rdp_gpu(self):
-        # RDP 会话默认用软件渲染器，游戏在宿主与桌面分身间切换时会因 GPU/驱动
-        # 身份不同而重编译着色器。开启 RDP 硬件 GPU 策略让两个会话共享物理 GPU。
+        # RDP 会话默认用软件渲染器，分身里的游戏会跑在 Microsoft Basic Render Driver
+        # 上，性能差。开启 RDP 硬件 GPU 策略让子会话走物理 GPU。注意：RDP 会话的显卡
+        # 适配器标识与主桌面不同，着色器缓存仍会各自编译一次，此策略无法消除重编译。
         # 写注册表需要管理员权限；对下一次新建的 Child Session 生效，不作用于当前会话。
         try:
             enabled = wts_api.is_rdp_hw_gpu_enabled()
@@ -297,7 +298,7 @@ class ChildSessionTab(CustomTab):
             return
         self._refresh_gpu_button()
         if enabled:
-            self._status.emit("已启用 RDP 硬件 GPU。重新连接桌面分身后生效，游戏将不再重编译着色器。")
+            self._status.emit("已启用 RDP 硬件 GPU。重新连接桌面分身后生效，分身里的游戏将使用物理 GPU（性能更好）。")
         else:
             self._status.emit("已禁用 RDP 硬件 GPU（恢复软件渲染）。若曾出现黑屏，重连后应恢复正常。")
 
